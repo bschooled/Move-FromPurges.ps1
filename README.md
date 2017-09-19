@@ -1,6 +1,5 @@
 # Move-FromPurges.ps1
-Purpose of this script is to be able to recover items from the hidden Purges subfolder in situations where a Retention policy or other 
-has moved large amounts to it. At the moment it only recover email messages from the purges folder, but will have more capabilities in the future.
+The purpose of this script is to be able to recover items from the hidden Purges subfolder in situations where a Retention policy or other process has moved large amounts of emails to it. At the moment it can only recover email messages from the purges folder, but is intended to have more capabilities in the future.
 
 Requirements:
 Without the following below, the script cannot run, there are no alternatives.
@@ -16,7 +15,8 @@ Steps for Purge Recovery Script:
 1.	You need an export of the Primary SMTP address of the users you want to recover, this can be in a variable or txt file (no headers)
 Ex:  
 Get-Mailbox | select -ExpandProperty PrimarySmtpAddress | Out-File C:\Move-FromPurges.ps1\export-users.txt  
-
+$mbs = Get-content C:\Move-FromPurges.ps1\export-users.txt  
+  
 2.	Before running the script import the list into a variable so we can use it to check all mailboxes.  
  
 3.	The script has many parameters, some required:  
@@ -31,5 +31,5 @@ h.	Optional: -logpath “FolderPath” <- Specify a log path to store logs in, d
 i.	Optional: -threadlimit 5 <- The maximum number of purge recover jobs to run at once. Specifying too high a number may cause throttling or even crash the script, 5 jobs at once is the default, don’t suggest going higher than 10  
    
 4.	If you want to do a “Dry Run” you can run with the -WhatIf switch, an example is below:
-.\Move-FromPurges.ps1 -Mailboxes $mbs -subfolder "Recovery" -AccountWithImpersonationRights "ews.impersonator@gamersbot.com" -startdate 01-01-2017 -enddate 09-14-2017 -whatif    
+.\Move-FromPurges.ps1 -Mailboxes $mbs -subfolder "Recovery" -AccountWithImpersonationRights "ews.impersonator@contoso.com" -startdate 01-01-2017 -enddate 09-14-2017 -whatif    
 
