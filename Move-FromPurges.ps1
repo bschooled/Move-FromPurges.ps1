@@ -25,7 +25,7 @@ param(
     [ValidateNotNullOrEmpty()]
     [string]$startdate,
     [Parameter(Position=4,Mandatory=$True,HelpMessage="Specify End Date YYYY-MM-DD")]
-    [ValidateNotNullOrEmpty()]
+    [ValidateNotNullOrEmpty()]  
     [string]$enddate,
     [Parameter(Position=5,Mandatory=$false,HelpMessage="Use -Whatif to show what the script would do")]
     [ValidateNotNullOrEmpty()]
@@ -246,8 +246,8 @@ $scriptblock = {
                 [int]$offset = 0
                 [int]$batch = 1
                 [decimal]$batches = (([int]$items.TotalCount)/($pagelimit))
-                Write-LogEntry -LogName $logpath -LogEntryText "There are $batches Batches"
                 $batches = [System.Math]::Ceiling($batches)
+                Write-LogEntry -LogName $logpath -LogEntryText "There are $batches Batches"                
                 $moreitems = $true
                 do{             
                     $count = @($items.count)
@@ -366,17 +366,18 @@ catch{
 if(!$pagelimit){[int]$pagelimit = 100}
 $lastrun = 0
 if(!$threadlimit){[int]$threadlimit = 5}
-$temp = @()
+[array]$temp = @()
 foreach($m in $Mailboxes){
     $check = Get-RSJob -Name $m
     if($check){
         Write-LogEntry -LogName $logpath -LogEntryText "User $m has an existing job running, will skip" -ForegroundColor White
     }
     else{
-        $temp += $m
+        Write-LogEntry -LogName $logpath -LogEntryText "Adding $m to temp array"
+        [array]$temp += $m
     }
 }
-$Mailboxes = $temp
+[array]$Mailboxes = [array]$temp
 
 Write-LogEntry -LogName $logpath -LogEntryText "Entering While Loop to Provision Jobs" -ForegroundColor White
 $exit = $false
@@ -394,7 +395,7 @@ While($exit -eq $false){
         Write-LogEntry -LogName $logpath -LogEntryText "Need to provision $jobstoprovision jobs" -ForegroundColor Yellow
         $provisioned = 1
         while($provisioned -le $jobstoprovision){
-            $MailboxToImpersonate = $Mailboxes[$lastrun]
+            [string]$MailboxToImpersonate = [array]$Mailboxes[$lastrun]
             $paramblock = @{
                 MailboxToImpersonate = $MailboxToImpersonate
                 subfolder = $subfolder
