@@ -243,71 +243,73 @@ $scriptblock = {
         $rfRootFolder = [Microsoft.Exchange.WebServices.Data.Folder]::Bind($Global:service,$rfRootFolderID) 
         $ffResponse = $rfRootFolder.FindFolders($Global:FolderView) 
         # Grab Purges Folder
-        $folder = $ffResponse | Where-Object {$_.DisplayName -like "Purges"}
-        Write-LogEntry -LogName $logpath -LogEntryText "DisplayName of Folder we are searching: $($folder.DisplayName)"
+        $ffResponse = $ffResponse | Where-Object {$_.DisplayName -like "*Purges*" -or $_.DisplayName -like "*Deletions*"}
         #check if folder exists, and then try to move items
-        if($folder){
-            $items = $Global:service.FindItems($folder.Id,$Global:searchFilterAggregated,$Global:Itemsview)
-            Write-LogEntry -LogName $logpath -LogEntryText "`tThere are $($Items.TotalCount) items in $($folder.DisplayName)"
-            $movemethod = $items | Get-Member Move -ErrorAction SilentlyContinue
-            if($items -and $movemethod){
-                [int]$offset = 0
-                [int]$batch = 1
-                [decimal]$batches = (([int]$items.TotalCount)/($pagelimit))
-                $batches = [System.Math]::Ceiling($batches)
-                Write-LogEntry -LogName $logpath -LogEntryText "There are $batches Batches"                
-                $moreitems = $true
-                do{             
-                    $count = @($items.count)
-                    $count = $count.Count
-                    switch ($count) {
-                        $pagelimit {$mailboxtomove = "`tMoving $count items, in Batch # $batch"}
-                        Default {$mailboxtomove = "`tMoving $count, Final Batch # $batch"}
-                    }
+        foreach($folder in $ffResponse){
+            Write-LogEntry -LogName $logpath -LogEntryText "DisplayName of Folder we are searching: $($folder.DisplayName)"            
+            if($folder){
+                $items = $Global:service.FindItems($folder.Id,$Global:searchFilterAggregated,$Global:Itemsview)
+                Write-LogEntry -LogName $logpath -LogEntryText "`tThere are $($Items.TotalCount) items in $($folder.DisplayName)"
+                $movemethod = $items | Get-Member Move -ErrorAction SilentlyContinue
+                if($items -and $movemethod){
+                    [int]$offset = 0
+                    [int]$batch = 1
+                    [decimal]$batches = (([int]$items.TotalCount)/($pagelimit))
+                    $batches = [System.Math]::Ceiling($batches)
+                    Write-LogEntry -LogName $logpath -LogEntryText "There are $batches Batches"                
+                    $moreitems = $true
+                    do{             
+                        $count = @($items.count)
+                        $count = $count.Count
+                        switch ($count) {
+                            $pagelimit {$mailboxtomove = "`tMoving $count items, in Batch # $batch"}
+                            Default {$mailboxtomove = "`tMoving $count, Final Batch # $batch"}
+                        }
 
-                    if($subfolder){
-                        Write-LogEntry -LogName $logpath -LogEntryText "`tThe Recovery Subfolder is: $($global:recoveryFolder.DisplayName)"
-                        if($whatif){
-                            Write-LogEntry -LogName $logpath -LogEntryText "Whatif: $mailboxtomove to $($folder.DisplayName)" -ForegroundColor Yellow
+                        if($subfolder){
+                            Write-LogEntry -LogName $logpath -LogEntryText "`tThe Recovery Subfolder is: $($global:recoveryFolder.DisplayName)"
+                            if($whatif){
+                                Write-LogEntry -LogName $logpath -LogEntryText "Whatif: $mailboxtomove to $($folder.DisplayName)" -ForegroundColor Yellow
+                            }
+                            else{
+                                Write-LogEntry -LogName $logpath -LogEntryText "$mailboxtomove to $($folder.DisplayName)"
+                                $items.Move($global:recoveryFolder.Id) | Out-Null                        
+                            }
                         }
                         else{
-                            Write-LogEntry -LogName $logpath -LogEntryText "$mailboxtomove to $($folder.DisplayName)"
-                            $items.Move($global:recoveryFolder.Id) | Out-Null                        
+                            if($whatif){
+                                Write-LogEntry -LogName $logpath -LogEntryText "Whatif: $mailboxtomove to Inbox" -ForegroundColor Yellow
+                            }
+                            else{
+                                Write-LogEntry -LogName $logpath -LogEntryText "$mailboxtomove to Inbox"
+                                $items.Move([Microsoft.Exchange.WebServices.Data.WellKnownFolderName]::Inbox) | Out-Null                     
+                            }                  
                         }
-                    }
-                    else{
-                        if($whatif){
-                            Write-LogEntry -LogName $logpath -LogEntryText "Whatif: $mailboxtomove to Inbox" -ForegroundColor Yellow
+                        if($items.MoreAvailable -eq $false){
+                            Write-LogEntry -LogName $logpath -LogEntryText "`tNo more items to move"
+                            $moreitems = $false
+                            $Global:Itemsview = new-object Microsoft.Exchange.WebServices.Data.ItemView([int]$pagelimit)
+                            $Global:Itemsview.Traversal = [Microsoft.Exchange.WebServices.Data.ItemTraversal]::Shallow
+                            
                         }
                         else{
-                            Write-LogEntry -LogName $logpath -LogEntryText "$mailboxtomove to Inbox"
-                            $items.Move([Microsoft.Exchange.WebServices.Data.WellKnownFolderName]::Inbox) | Out-Null                     
-                        }                  
+                            [int]$offset += $Global:Itemsview.PageSize
+                            $Global:Itemsview.Offset = $offset
+                            $batch++
+                            $items = $Global:service.FindItems($folder.Id,$Global:searchFilterAggregated,$Global:Itemsview)
+                            Write-LogEntry -LogName $logpath -LogEntryText "`tIncrementing Offset to $offset; Value is: $($Global:itemsview.Offset)"
+                        }
+                    }    
+                    while($moreitems -eq $True){}
+                }
+                else{
+                    Write-LogEntry -LogName $logpath -LogEntryText "`tNo Items to move, or missing Move method" -ForegroundColor Yellow
                     }
-                    if($items.MoreAvailable -eq $false){
-                        Write-LogEntry -LogName $logpath -LogEntryText "`tNo more items to move"
-                        $moreitems = $false
-                        $Global:Itemsview = new-object Microsoft.Exchange.WebServices.Data.ItemView([int]$pagelimit)
-                        $Global:Itemsview.Traversal = [Microsoft.Exchange.WebServices.Data.ItemTraversal]::Shallow
-                        
-                    }
-                    else{
-                        [int]$offset += $Global:Itemsview.PageSize
-                        $Global:Itemsview.Offset = $offset
-                        $batch++
-                        $items = $Global:service.FindItems($folder.Id,$Global:searchFilterAggregated,$Global:Itemsview)
-                        Write-LogEntry -LogName $logpath -LogEntryText "`tIncrementing Offset to $offset; Value is: $($Global:itemsview.Offset)"
-                    }
-                }    
-                while($moreitems -eq $True){}
             }
             else{
-                Write-LogEntry -LogName $logpath -LogEntryText "`tNo Items to move, or missing Move method" -ForegroundColor Yellow
-                }
-        }
-        else{
-            Write-LogEntry -LogName $logpath -LogEntryText "Couldn't find the Purges folder for: $mailboxtoimpersonate" -ForegroundColor Red
-            }        
+                Write-LogEntry -LogName $logpath -LogEntryText "Couldn't find the Purges folder for: $mailboxtoimpersonate" -ForegroundColor Red
+                }    
+            }
     }
     ###############################################################################################################################
     #Below are static options for building Search Filters and Views
