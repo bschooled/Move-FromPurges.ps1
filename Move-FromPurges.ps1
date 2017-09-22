@@ -14,7 +14,7 @@
 param(
 	[Parameter(Position=0,Mandatory=$True,HelpMessage="Specifies the mailbox(es) to be accessed from an array (use comma seperate)")]
 	[ValidateNotNullOrEmpty()]
-    [array]$Mailboxes,
+    $Mailboxes,
 	[Parameter(Position=1,Mandatory=$false,HelpMessage="Specifies the subfolder under Inbox that you want the messages moved to")]
 	[ValidateNotNullOrEmpty()]
     [string]$subfolder,
@@ -43,7 +43,7 @@ if(!$logpath){
 else{
     $rootpath = $rootpath.TrimEnd("\") + "\"
 }
-
+[array]$Mailboxes = $Mailboxes
 #check for base components:
 $dllexists = Get-ChildItem "C:\Program Files\Microsoft\Exchange\Web Services\2.2\Microsoft.Exchange.WebServices.dll" -ErrorAction SilentlyContinue
 if(!$dllexists){Write-Host "No Microsoft.Exchange.WebServices.dll found in C:\Program Files\Microsoft\Exchange\Web Services\2.2\ ; Cannot Continue, Please Install the EWS Manage API 2.2"; exit;}
@@ -70,8 +70,13 @@ Function Write-LogEntry {
         }
     }
 }
-
-
+if($Mailboxes[0] -like "$*"){
+    [string]$usevar = ($Mailboxes[0]).Trim("$")
+    Write-LogEntry -LogName $logpath -LogEntryText "Trying to convert bad input: $usevar"
+    [array]$Mailboxes = @(Get-Variable -Name $usevar -ValueOnly)
+}
+Write-LogEntry -LogName $logpath -LogEntryText "Users Being Migrated:"
+Write-LogEntry -LogName $logpath -LogEntryText "$($mailboxes)"
 
 $scriptblock = {
 
@@ -95,9 +100,6 @@ $scriptblock = {
     [string]$logpath = $params.logpath
     #[Parameter(Position=8)]
     #[System.Management.Automation.PSCredential]$psCred   
-    $Error.Clear()
-    $logpath = $logpath + "Purge-Recovery-$MailboxToImpersonate.txt"
-    if(!$creds){throw "Cannot find cred variable"}
     Function Write-LogEntry {
         param(
             [string] $LogName ,
@@ -113,6 +115,12 @@ $scriptblock = {
             }
         }
         }
+    $Error.Clear()
+    $logpath = $logpath + "Purge-Recovery-$MailboxToImpersonate.txt"
+    if(!$creds){throw "Cannot find cred variable"}
+    if(!$subfolder){Write-LogEntry -LogName $logpath -LogEntryText "No Subfolder Detected"}
+    else{Write-LogEntry -LogName $logpath -LogEntryText "Recover Folder is: $subfolder"}
+
     # Load Exchange web services DLL and set the service
     # Requires the EWS API downloaded to your local computer
     Write-LogEntry -LogName $logpath -LogEntryText "Troubleshooting: $($creds)"
@@ -366,6 +374,7 @@ catch{
 if(!$pagelimit){[int]$pagelimit = 100}
 $lastrun = 0
 if(!$threadlimit){[int]$threadlimit = 5}
+if(!$subfolder){Write-LogEntry -LogName $logpath -LogEntryText "No Subfolder"}
 [array]$temp = @()
 foreach($m in $Mailboxes){
     $check = Get-RSJob -Name $m
@@ -406,6 +415,7 @@ While($exit -eq $false){
                 pagelimit = $pagelimit
                 logpath = $rootpath
             }
+            
             Write-LogEntry -LogName $logpath -LogEntryText "Provisioning Job  $MailboxToImpersonate; LastRun: $lastrun" -ForegroundColor White
             Start-RSJob -Name $MailboxToImpersonate -ScriptBlock $scriptblock
             $provisioned++
