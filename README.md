@@ -1,7 +1,13 @@
 # Move-FromPurges.ps1
 The purpose of this script is to be able to recover items from the hidden Purges subfolder in situations where a Retention policy or other process has moved large amounts of emails to it. At the moment it can only recover email messages from the purges folder, but is intended to have more capabilities in the future.
-
-Requirements:
+  
+#Future Plans
+*Create a working GUI via the Launch GUI shell
+*Add Notes,Tasks, and Calendar Recovery
+*Allow user to determine recovery paths
+*Simplify Dependencies
+  
+#Requirements:
 Without the following below, the script cannot run, there are no alternatives.
 1.	You need the EWS Managed API located here: https://www.microsoft.com/en-us/download/details.aspx?id=42951 
 2.	You need to install PowershellGet (OneGet) if you are running on Powershell Version older than 5 (the script does not need to be run from a server, recommended run it from Windows 10 as that is what it was tested on): https://github.com/OneGet/oneget 
