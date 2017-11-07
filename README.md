@@ -1,5 +1,5 @@
   ## Move-FromPurges.ps1
-The purpose of this script is to be able to recover items from the hidden Purges subfolder in situations where a Retention policy or other process has moved large amounts of emails to it. At the moment it can only recover email messages from the purges folder, but is intended to have more capabilities in the future.
+The purpose of this script is to be able to recover items from the hidden Purges subfolder in situations where a Retention policy or other process has moved large amounts of emails to it. The script can recover Emails, Notes, Tasks, and Calendar items.
 
 ## Updates  
 * Notes, Tasks, and Calendar items can now be recovered, and will go to their respective folders: Check the parameters below    
