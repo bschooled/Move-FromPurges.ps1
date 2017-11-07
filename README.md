@@ -1,4 +1,4 @@
-## Move-FromPurges.ps1
+  ## Move-FromPurges.ps1
 The purpose of this script is to be able to recover items from the hidden Purges subfolder in situations where a Retention policy or other process has moved large amounts of emails to it. At the moment it can only recover email messages from the purges folder, but is intended to have more capabilities in the future.
 
 ## Updates  
@@ -42,7 +42,7 @@ k.  Optional: -recoverNotes <- Switch Parameter. Will recover notes to the notes
 l.  Optional: -recoverCalendar <- Switch Parameter. Will recover Calendar items to the Calendar folder  
 m.  Optional: -recoverAll <- Switch Parameter. Will recover all items, email items go recovery or inbox, all other items go to their respective   
   
-4.	Examples
-a.  .\Move-FromPurges.ps1 -Mailboxes $mbs -subfolder "Recovery" -AccountWithImpersonationRights "ews.impersonator@contoso.com" -startdate 01-01-2017 -enddate 09-14-2017 -whatif <-- Does a dry run, view log to see what it would
-b   .\Move-FromPurges.ps1 -Mailboxes $mbs -subfolder Recovery -AccountWithImpersonationRights "ews.impersonator@contoso.com" -startdate 11-6-2016 -enddate 11-7-2017 -recoverTasks -recoverNotes -recoverCalendar <--Recovers tasks, notes, and calendar items
+4.	Examples  
+a.  .\Move-FromPurges.ps1 -Mailboxes $mbs -subfolder "Recovery" -AccountWithImpersonationRights "ews.impersonator@contoso.com" -startdate 01-01-2017 -enddate 09-14-2017 -whatif <-- Does a dry run, view log to see what it would  
+b   .\Move-FromPurges.ps1 -Mailboxes $mbs -subfolder Recovery -AccountWithImpersonationRights "ews.impersonator@contoso.com" -startdate 11-6-2016 -enddate 11-7-2017 -recoverTasks -recoverNotes -recoverCalendar <--Recovers tasks, notes, and calendar items  
 
