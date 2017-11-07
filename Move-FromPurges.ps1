@@ -33,6 +33,18 @@ param(
     [Parameter(Position=5,Mandatory=$false,HelpMessage="Default PageLimit 1000 (this is the maximum), specify integer value lower than maximum")]
     [ValidateNotNullOrEmpty()]
     [int]$pagelimit,
+    [Parameter(Position=6,Mandatory=$false,HelpMessage="This will recover tasks to the tasks folder, it is a switch parameter")]
+    [ValidateNotNullOrEmpty()]
+    [switch]$recoverTasks,
+    [Parameter(Position=7,Mandatory=$false,HelpMessage="This will recover Notes to the Notes folder, it is a switch parameter")]
+    [ValidateNotNullOrEmpty()]
+    [switch]$recoverNotes,
+    [Parameter(Position=8,Mandatory=$false,HelpMessage="This will recover Calendar items to the Calendar folder, it is a switch parameter")]
+    [ValidateNotNullOrEmpty()]
+    [switch]$recoverCalendar,
+    [Parameter(Position=8,Mandatory=$false,HelpMessage="This will recover all items, it is a switch parameter")]
+    [ValidateNotNullOrEmpty()]
+    [switch]$recoverAll,
     [string]$logpath,
     [int]$threadlimit      
     )
@@ -100,6 +112,25 @@ $scriptblock = {
     [string]$logpath = $params.logpath
     #[Parameter(Position=8)]
     #[System.Management.Automation.PSCredential]$psCred   
+    [hashtable]$Global:recoverOptions = @{}
+
+    if(!($params.recoverTasks) -and !($params.recoverCalendar) -and !($params.recoverNotes) -and !($params.recoverAll)){
+        [hashtable]$Global:recoverOptions.RecoverEmail = $True
+    }
+    elseif($param.recoverAll){
+        [hashtable]$Global:recoverOptions.recoverTasks = $True
+        [hashtable]$Global:recoverOptions.recoverNotes = $True
+        [hashtable]$Global:recoverOptions.recoverCalendar = $True
+        [hashtable]$Global:recoverOptions.RecoverEmail = $True
+    }
+    else{
+        [hashtable]$Global:recoverOptions.RecoverEmail = $params.RecoverEmail
+        [hashtable]$Global:recoverOptions.recoverCalendar = $param.recoverCalendar
+        [hashtable]$Global:recoverOptions.recoverNotes = $params.recoverNotes
+        [hashtable]$Global:recoverOptions.recoverTasks = $params.recoverTasks
+    }
+
+    Write-LogEntry -LogName $logpath -LogEntryText "$($Global:recoverOptions)"
     Function Write-LogEntry {
         param(
             [string] $LogName ,
@@ -123,10 +154,9 @@ $scriptblock = {
 
     # Load Exchange web services DLL and set the service
     # Requires the EWS API downloaded to your local computer
-    Write-LogEntry -LogName $logpath -LogEntryText "Troubleshooting: $($creds)"
-    Write-LogEntry -LogName $logpath -LogEntryText "Troubleshooting: $($params)"
-    
-    $dllpath = "C:\Program Files\Microsoft\Exchange\Web Services\2.2\Microsoft.Exchange.WebServices.dll"
+    # Write-LogEntry -LogName $logpath -LogEntryText "Troubleshooting: $($creds)"
+    # Write-LogEntry -LogName $logpath -LogEntryText "Troubleshooting: $($params)"
+    $dllpath = "C:\Program Files\Microsoft\Exchange\Web Services\2.2\Microsoft.Exchange.WebServices.dll"    
     Import-Module $dllpath
     $ExchangeVersion = [Microsoft.Exchange.WebServices.Data.ExchangeVersion]::Exchange2013 
     $Global:service = New-Object Microsoft.Exchange.WebServices.Data.ExchangeService($ExchangeVersion) 
@@ -146,6 +176,29 @@ $scriptblock = {
     ##Login to Mailbox with Impersonation
     # Full credit for the Below GetFolder and Create Folder Functions goes to David Berret
     # https://blogs.msdn.microsoft.com/emeamsgdev/2013/10/20/powershell-create-folders-in-users-mailboxes/
+
+    function itemSearchOptions([string]$itemType){
+        #combine the search into aggrated search filter
+        $searchFilterCollectionItemType =  new-object Microsoft.Exchange.WebServices.Data.SearchFilter+IsEqualTo([Microsoft.Exchange.WebServices.Data.EmailMessageSchema]::ItemClass, $itemType)    
+        $Global:searchFilterAggregated = New-Object Microsoft.Exchange.WebServices.Data.SearchFilter+SearchFilterCollection([Microsoft.Exchange.WebServices.Data.LogicalOperator]::And)
+        if($itemType -eq "IPM.StickyNote" -or $itemType -eq "IPM.Task"){
+            $Global:searchFilterAggregated.Add($searchFilterCollectionItemType)
+        }
+        else{
+            $searchFilterStartDate = new-object Microsoft.Exchange.WebServices.Data.SearchFilter+IsGreaterThanOrEqualTo([Microsoft.Exchange.WebServices.Data.ItemSchema]::DateTimeReceived, [System.DateTime]$startdate)
+            $searchFilterEndDate = new-object Microsoft.Exchange.WebServices.Data.SearchFilter+IsLessThanOrEqualTo([Microsoft.Exchange.WebServices.Data.ItemSchema]::DateTimeReceived, [System.DateTime]$enddate)      
+            #specify our OR states for start and end dates
+            $global:searchFilterCollectionStart = New-Object Microsoft.Exchange.WebServices.Data.SearchFilter+SearchFilterCollection([Microsoft.Exchange.WebServices.Data.LogicalOperator]::Or)
+            $global:searchFilterCollectionStart.Add($searchFilterStartDate)
+            #$global:searchFilterCollectionStart.Add($searchFilterStartDateCreated)
+            $global:searchFilterCollectionEnd = New-Object Microsoft.Exchange.WebServices.Data.SearchFilter+SearchFilterCollection([Microsoft.Exchange.WebServices.Data.LogicalOperator]::Or)
+            $global:searchFilterCollectionEnd.Add($searchFilterEndDate)
+            #$global:searchFilterCollectionEnd.Add($searchFilterEndDateCreated)
+            $Global:searchFilterAggregated.Add($searchFilterCollectionItemType)
+            $Global:searchFilterAggregated.Add($global:searchFilterCollectionStart)
+            $Global:searchFilterAggregated.Add($global:searchFilterCollectionEnd)
+        }
+    }
     Function GetFolder()
     {
         # Return a reference to a folder specified by path
@@ -170,8 +223,8 @@ $scriptblock = {
                     {
                         # We have either none or more than one folder returned... Either way, we can't continue
                         $Folder = $null
-                        Write-Verbose ([string]::Format("Failed to find {0}", $PathElements[$i]))
-                        Write-Verbose ([string]::Format("Requested folder path: {0}", $FolderPath))
+                        Write-LogEntry -LogName $logpath -LogEntryText ([string]::Format("Failed to find {0}", $PathElements[$i]))
+                        Write-LogEntry -LogName $logpath -LogEntryText ([string]::Format("Requested folder path: {0}", $FolderPath))
                         break
                     }
                     
@@ -230,110 +283,127 @@ $scriptblock = {
         $subfolder = $args[2]
         $Global:service.ImpersonatedUserId = New-Object Microsoft.Exchange.WebServices.Data.ImpersonatedUserId([Microsoft.Exchange.WebServices.Data.ConnectingIdType]::SmtpAddress,$MailboxToImpersonate ); 
         Write-LogEntry -LogName $logpath -LogEntryText "Service set to impersonate for: $($Global:service.ImpersonatedUserId.Id)"
-        #Get Folder IDs
-        $rfRootFolderID = new-object Microsoft.Exchange.WebServices.Data.FolderId([Microsoft.Exchange.WebServices.Data.WellKnownFolderName]:: RecoverableItemsRoot,$MailboxToImpersonate) 
         
-        if($subfolder){
-            Write-LogEntry -LogName $logpath -LogEntryText "`tTry to create subfolder: $subfolder"
-            $inboxID = new-object Microsoft.Exchange.WebServices.Data.FolderId([Microsoft.Exchange.WebServices.Data.WellKnownFolderName]::Inbox,$MailboxToImpersonate) 
-            CreateFolders $inboxID $subfolder
-        }
 
+        #Get Recoverable Item Root Folder
+        $rfRootFolderID = new-object Microsoft.Exchange.WebServices.Data.FolderId([Microsoft.Exchange.WebServices.Data.WellKnownFolderName]:: RecoverableItemsRoot,$MailboxToImpersonate) 
         #Bind folder IDs to Objects
         $rfRootFolder = [Microsoft.Exchange.WebServices.Data.Folder]::Bind($Global:service,$rfRootFolderID) 
         $ffResponse = $rfRootFolder.FindFolders($Global:FolderView) 
-        # Grab Purges Folder
+        # Grab Purges and Deletions subfolders
         $ffResponse = $ffResponse | Where-Object {$_.DisplayName -like "*Purges*" -or $_.DisplayName -like "*Deletions*"}
-        #check if folder exists, and then try to move items
-        foreach($folder in $ffResponse){
-            Write-LogEntry -LogName $logpath -LogEntryText "DisplayName of Folder we are searching: $($folder.DisplayName)"            
-            if($folder){
-                $items = $Global:service.FindItems($folder.Id,$Global:searchFilterAggregated,$Global:Itemsview)
-                Write-LogEntry -LogName $logpath -LogEntryText "`tThere are $($Items.TotalCount) items in $($folder.DisplayName)"
-                $movemethod = $items | Get-Member Move -ErrorAction SilentlyContinue
-                if($items -and $movemethod){
-                    [int]$offset = 0
-                    [int]$batch = 1
-                    [decimal]$batches = (([int]$items.TotalCount)/($pagelimit))
-                    $batches = [System.Math]::Ceiling($batches)
-                    Write-LogEntry -LogName $logpath -LogEntryText "There are $batches Batches"                
-                    $moreitems = $true
-                    do{             
-                        $count = @($items.count)
-                        $count = $count.Count
-                        switch ($count) {
-                            $pagelimit {$mailboxtomove = "`tMoving $count items, in Batch # $batch"}
-                            Default {$mailboxtomove = "`tMoving $count, Final Batch # $batch"}
-                        }
 
-                        if($subfolder){
+        foreach($option in $Global:recoverOptions){
+
+            switch ($option.Keys) {
+                recoverCalendar {
+                    $global:recoveryFolder = New-Object Microsoft.Exchange.WebServices.Data.FolderId([Microsoft.Exchange.WebServices.Data.WellKnownFolderName]::Calendar,$MailboxToImpersonate)
+                    itemSearchOptions "IPM.Appointment"
+                    Write-LogEntry -LogName $logpath -LogEntryText "The Recover Folder is: $($global:recoveryFolder.FolderName)"
+
+                }
+                recoverTasks {
+                    $global:recoveryFolder = New-Object Microsoft.Exchange.WebServices.Data.FolderId([Microsoft.Exchange.WebServices.Data.WellKnownFolderName]::Tasks,$MailboxToImpersonate)
+                    itemSearchOptions "IPM.Task"
+                    Write-LogEntry -LogName $logpath -LogEntryText "The Recover Folder is: $($global:recoveryFolder.FolderName)"             
+                }
+                recoverNotes {
+                    $global:recoveryFolder = New-Object Microsoft.Exchange.WebServices.Data.FolderId([Microsoft.Exchange.WebServices.Data.WellKnownFolderName]::Notes,$MailboxToImpersonate)
+                    itemSearchOptions "IPM.StickyNote"
+                    Write-LogEntry -LogName $logpath -LogEntryText "The Recover Folder is: $($global:recoveryFolder.FolderName)"
+                                   
+                }
+                RecoverEmail {
+                    $inboxID = new-object Microsoft.Exchange.WebServices.Data.FolderId([Microsoft.Exchange.WebServices.Data.WellKnownFolderName]::Inbox,$MailboxToImpersonate) 
+                    itemSearchOptions "IPM.Note"
+                    if($subfolder){
+                        Write-LogEntry -LogName $logpath -LogEntryText "`tTry to create subfolder: $subfolder"
+                        CreateFolders $inboxID $subfolder
+                        Write-LogEntry -LogName $logpath -LogEntryText "The Recover Folder is: $($global:recoveryFolder.FolderName)"                        
+                    }                                     
+                    else{
+                        Write-LogEntry -LogName $logpath -LogEntryText "`tDefaulting to Inbox"                        
+                        $global:recoveryFolder = $inboxID
+                        Write-LogEntry -LogName $logpath -LogEntryText "The Recover Folder is: $($global:recoveryFolder.FolderName)"                        
+                    }
+                }
+                Default {
+                    $inboxID = new-object Microsoft.Exchange.WebServices.Data.FolderId([Microsoft.Exchange.WebServices.Data.WellKnownFolderName]::Inbox,$MailboxToImpersonate) 
+                    itemSearchOptions "IPM.Note"
+                    if($subfolder){
+                        Write-LogEntry -LogName $logpath -LogEntryText "`tTry to create subfolder: $subfolder"
+                        CreateFolders $inboxID $subfolder
+                        Write-LogEntry -LogName $logpath -LogEntryText "The Recover Folder is: $($global:recoveryFolder.FolderName)"                        
+                    }                                      
+                    else{
+                        $global:recoveryFolder = $inboxID
+                        Write-LogEntry -LogName $logpath -LogEntryText "The Recover Folder is: $($global:recoveryFolder.FolderName)"                        
+                    }
+                }
+            }
+
+            
+            foreach($folder in $ffResponse){
+                Write-LogEntry -LogName $logpath -LogEntryText "DisplayName of Folder we are searching: $($folder.DisplayName)"            
+                if($folder){
+                    #Below we search items with, up to 1000 at a time
+                    $items = $Global:service.FindItems($folder.Id,$Global:searchFilterAggregated,$Global:Itemsview)
+                    Write-LogEntry -LogName $logpath -LogEntryText "`tThere are $($Items.TotalCount) items in $($folder.DisplayName)"
+                    $movemethod = $items | Get-Member Move -ErrorAction SilentlyContinue
+                    if($items -and $movemethod){
+                        [int]$offset = 0
+                        [int]$batch = 1
+                        [decimal]$batches = (([int]$items.TotalCount)/($pagelimit))
+                        $batches = [System.Math]::Ceiling($batches)
+                        Write-LogEntry -LogName $logpath -LogEntryText "There are $batches Batches"                
+                        $moreitems = $true
+                        do{             
+                            $count = @($items.count)
+                            $count = $count.Count
+                            switch ($count) {
+                                $pagelimit {$mailboxtomove = "`tMoving $count items, in Batch # $batch"}
+                                Default {$mailboxtomove = "`tMoving $count, Final Batch # $batch"}
+                            }
+
                             Write-LogEntry -LogName $logpath -LogEntryText "`tThe Recovery Subfolder is: $($global:recoveryFolder.DisplayName)"
                             if($whatif){
-                                Write-LogEntry -LogName $logpath -LogEntryText "Whatif: $mailboxtomove to $($folder.DisplayName)" -ForegroundColor Yellow
+                                Write-LogEntry -LogName $logpath -LogEntryText "Whatif: $mailboxtomove from $($folder.DisplayName) to  $($global:recoveryFolder.FolderName)" -ForegroundColor Yellow
                             }
                             else{
-                                Write-LogEntry -LogName $logpath -LogEntryText "$mailboxtomove to $($folder.DisplayName)"
-                                $items.Move($global:recoveryFolder.Id) | Out-Null                        
+                                Write-LogEntry -LogName $logpath -LogEntryText "$mailboxtomove from  $($folder.DisplayName) to  $($global:recoveryFolder.FolderName)"
+                                # This is our method by which we move items to the destination recovery folder"
+                                $items.Move($global:recoveryFolder) | Out-Null
                             }
-                        }
-                        else{
-                            if($whatif){
-                                Write-LogEntry -LogName $logpath -LogEntryText "Whatif: $mailboxtomove to Inbox" -ForegroundColor Yellow
+
+                            if($items.MoreAvailable -eq $false){
+                                Write-LogEntry -LogName $logpath -LogEntryText "`tNo more items to move"
+                                $moreitems = $false
+                                $Global:Itemsview = new-object Microsoft.Exchange.WebServices.Data.ItemView([int]$pagelimit)
+                                $Global:Itemsview.Traversal = [Microsoft.Exchange.WebServices.Data.ItemTraversal]::Shallow
+                                
                             }
                             else{
-                                Write-LogEntry -LogName $logpath -LogEntryText "$mailboxtomove to Inbox"
-                                $items.Move([Microsoft.Exchange.WebServices.Data.WellKnownFolderName]::Inbox) | Out-Null                     
-                            }                  
-                        }
-                        if($items.MoreAvailable -eq $false){
-                            Write-LogEntry -LogName $logpath -LogEntryText "`tNo more items to move"
-                            $moreitems = $false
-                            $Global:Itemsview = new-object Microsoft.Exchange.WebServices.Data.ItemView([int]$pagelimit)
-                            $Global:Itemsview.Traversal = [Microsoft.Exchange.WebServices.Data.ItemTraversal]::Shallow
-                            
-                        }
-                        else{
-                            [int]$offset += $Global:Itemsview.PageSize
-                            $Global:Itemsview.Offset = $offset
-                            $batch++
-                            $items = $Global:service.FindItems($folder.Id,$Global:searchFilterAggregated,$Global:Itemsview)
-                            Write-LogEntry -LogName $logpath -LogEntryText "`tIncrementing Offset to $offset; Value is: $($Global:itemsview.Offset)"
-                        }
-                    }    
-                    while($moreitems -eq $True){}
+                                [int]$offset += $Global:Itemsview.PageSize
+                                $Global:Itemsview.Offset = $offset
+                                $batch++
+                                $items = $Global:service.FindItems($folder.Id,$Global:searchFilterAggregated,$Global:Itemsview)
+                                Write-LogEntry -LogName $logpath -LogEntryText "`tIncrementing Offset to $offset; Value is: $($Global:itemsview.Offset)"
+                            }
+                        }    
+                        while($moreitems -eq $True){}
+                    }
+                    else{
+                        Write-LogEntry -LogName $logpath -LogEntryText "`tNo Items to move, or missing Move method" -ForegroundColor Yellow
+                    }
                 }
                 else{
-                    Write-LogEntry -LogName $logpath -LogEntryText "`tNo Items to move, or missing Move method" -ForegroundColor Yellow
-                    }
-            }
-            else{
-                Write-LogEntry -LogName $logpath -LogEntryText "Couldn't find the Purges folder for: $mailboxtoimpersonate" -ForegroundColor Red
+                    Write-LogEntry -LogName $logpath -LogEntryText "Couldn't find the Purges folder for: $mailboxtoimpersonate" -ForegroundColor Red
                 }    
             }
+        }
     }
     ###############################################################################################################################
-    #Below are static options for building Search Filters and Views
-    #
-    #Specify Search Filters: Specify Date and Message Class Type
-    $searchFilterEmail = new-object Microsoft.Exchange.WebServices.Data.SearchFilter+IsEqualTo([Microsoft.Exchange.WebServices.Data.EmailMessageSchema]::ItemClass, "IPM.Note")
-    $searchFilterStartDate = new-object Microsoft.Exchange.WebServices.Data.SearchFilter+IsGreaterThanOrEqualTo([Microsoft.Exchange.WebServices.Data.ItemSchema]::DateTimeReceived, [System.DateTime]$startdate)
-    $searchFilterEndDate = new-object Microsoft.Exchange.WebServices.Data.SearchFilter+IsLessThanOrEqualTo([Microsoft.Exchange.WebServices.Data.ItemSchema]::DateTimeReceived, [System.DateTime]$enddate)
-    #$searchFilterStartDateCreated = new-object Microsoft.Exchange.WebServices.Data.SearchFilter+IsGreaterThanOrEqualTo([Microsoft.Exchange.WebServices.Data.ItemSchema]::DateTimeCreated, [System.DateTime]$startdate)
-    #$searchFilterEndDateCreated = new-object Microsoft.Exchange.WebServices.Data.SearchFilter+IsLessThanOrEqualTo([Microsoft.Exchange.WebServices.Data.ItemSchema]::DateTimeCreated, [System.DateTime]$enddate)
-
-    #specify our OR states for start and end dates
-    $searchFilterCollectionStart = New-Object Microsoft.Exchange.WebServices.Data.SearchFilter+SearchFilterCollection([Microsoft.Exchange.WebServices.Data.LogicalOperator]::Or)
-    $searchFilterCollectionStart.Add($searchFilterStartDate)
-    #$searchFilterCollectionStart.Add($searchFilterStartDateCreated)
-    $searchFilterCollectionEnd = New-Object Microsoft.Exchange.WebServices.Data.SearchFilter+SearchFilterCollection([Microsoft.Exchange.WebServices.Data.LogicalOperator]::Or)
-    $searchFilterCollectionEnd.Add($searchFilterEndDate)
-    #$searchFilterCollectionEnd.Add($searchFilterEndDateCreated)
-
-    #combine the search into aggrated search filter
-    $Global:searchFilterAggregated = New-Object Microsoft.Exchange.WebServices.Data.SearchFilter+SearchFilterCollection([Microsoft.Exchange.WebServices.Data.LogicalOperator]::And)
-    $Global:searchFilterAggregated.Add($searchFilterEmail)
-    $Global:searchFilterAggregated.Add($searchFilterCollectionStart)
-    $Global:searchFilterAggregated.Add($searchFilterCollectionEnd)
+    #Below are static options for building Search Filters and View
 
     #setting property sets and item traversal
     #$psPropset = new-object Microsoft.Exchange.WebServices.Data.PropertySet([Microsoft.Exchange.WebServices.Data.BasePropertySet]::IdOnly)   
@@ -416,6 +486,10 @@ While($exit -eq $false){
                 whatif = $whatif
                 pagelimit = $pagelimit
                 logpath = $rootpath
+                recoverNotes = $recoverNotes
+                recoverTasks = $recoverTasks
+                recoverCalendar = $recoverCalendar
+                recoverAll = $recoverAll
             }
             
             Write-LogEntry -LogName $logpath -LogEntryText "Provisioning Job  $MailboxToImpersonate; LastRun: $lastrun" -ForegroundColor White
