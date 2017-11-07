@@ -112,25 +112,9 @@ $scriptblock = {
     [string]$logpath = $params.logpath
     #[Parameter(Position=8)]
     #[System.Management.Automation.PSCredential]$psCred   
-    [hashtable]$Global:recoverOptions = @{}
 
-    if(!($params.recoverTasks) -and !($params.recoverCalendar) -and !($params.recoverNotes) -and !($params.recoverAll)){
-        [hashtable]$Global:recoverOptions.RecoverEmail = $True
-    }
-    elseif($param.recoverAll){
-        [hashtable]$Global:recoverOptions.recoverTasks = $True
-        [hashtable]$Global:recoverOptions.recoverNotes = $True
-        [hashtable]$Global:recoverOptions.recoverCalendar = $True
-        [hashtable]$Global:recoverOptions.RecoverEmail = $True
-    }
-    else{
-        [hashtable]$Global:recoverOptions.RecoverEmail = $params.RecoverEmail
-        [hashtable]$Global:recoverOptions.recoverCalendar = $param.recoverCalendar
-        [hashtable]$Global:recoverOptions.recoverNotes = $params.recoverNotes
-        [hashtable]$Global:recoverOptions.recoverTasks = $params.recoverTasks
-    }
-
-    Write-LogEntry -LogName $logpath -LogEntryText "$($Global:recoverOptions)"
+    $Error.Clear()
+    $logpath = $logpath + "Purge-Recovery-$MailboxToImpersonate.txt"
     Function Write-LogEntry {
         param(
             [string] $LogName ,
@@ -145,9 +129,31 @@ $scriptblock = {
                 write-host $LogEntryText -ForegroundColor $ForeGroundColor
             }
         }
-        }
-    $Error.Clear()
-    $logpath = $logpath + "Purge-Recovery-$MailboxToImpersonate.txt"
+    }
+    Write-LogEntry -LogName $logpath -LogEntryText "Starting Recover for: $mailboxToImpersonate on $(Get-Date)"
+    [hashtable]$Global:recoverOptions = @{}
+    if(!($params.recoverTasks) -and !($params.recoverCalendar) -and !($params.recoverNotes) -and !($params.recoverAll)){
+        Write-LogEntry -logName $logpath -LogEntryText "Detected no Recovery Options, setting RecoverEmail to True"
+        $Global:recoverOptions.RecoverEmail = "Yes"
+        Write-LogEntry -LogName $logpath -LogEntryText "$($Global:recoverOptions)"
+    }
+    elseif($params.recoverAll -eq "Yes"){
+        Write-LogEntry -LogName $logpath -LogEntryText "Detected RecoverAll, setting all options to True"        
+        $Global:recoverOptions.recoverTasks = "Yes"
+        $Global:recoverOptions.recoverNotes = "Yes"
+        $Global:recoverOptions.recoverCalendar = "Yes"
+        $Global:recoverOptions.RecoverEmail = "Yes"
+        Write-LogEntry -LogName $logpath -LogEntryText "$($Global:recoverOptions)"        
+    }
+    else{
+        Write-LogEntry -LogName $logpath -LogEntryText "Setting options to individual preferences"
+        if($params.RecoverEmail){$Global:recoverOptions.RecoverEmail = $params.RecoverEmail}
+        if($params.recoverCalendar){$Global:recoverOptions.recoverCalendar = $params.recoverCalendar}
+        if($params.recoverNotes){$Global:recoverOptions.recoverNotes = $params.recoverNotes}
+        if($params.recoverTasks){$Global:recoverOptions.recoverTasks = $params.recoverTasks}
+        Write-LogEntry -LogName $logpath -LogEntryText "$($Global:recoverOptions)"        
+    }
+
     if(!$creds){throw "Cannot find cred variable"}
     if(!$subfolder){Write-LogEntry -LogName $logpath -LogEntryText "No Subfolder Detected"}
     else{Write-LogEntry -LogName $logpath -LogEntryText "Recover Folder is: $subfolder"}
@@ -293,51 +299,60 @@ $scriptblock = {
         # Grab Purges and Deletions subfolders
         $ffResponse = $ffResponse | Where-Object {$_.DisplayName -like "*Purges*" -or $_.DisplayName -like "*Deletions*"}
 
-        foreach($option in $Global:recoverOptions){
-
-            switch ($option.Keys) {
+        foreach($option in $Global:recoverOptions.Keys){
+            Write-LogEntry -LogName $logpath -LogEntryText "Recovery Option is $option"
+            switch ($option) {
                 recoverCalendar {
                     $global:recoveryFolder = New-Object Microsoft.Exchange.WebServices.Data.FolderId([Microsoft.Exchange.WebServices.Data.WellKnownFolderName]::Calendar,$MailboxToImpersonate)
                     itemSearchOptions "IPM.Appointment"
-                    Write-LogEntry -LogName $logpath -LogEntryText "The Recover Folder is: $($global:recoveryFolder.FolderName)"
+                    $destFolder = $global:recoveryFolder.FolderName
+                    Write-LogEntry -LogName $logpath -LogEntryText "The Recover Folder is: $destFolder"
 
                 }
                 recoverTasks {
                     $global:recoveryFolder = New-Object Microsoft.Exchange.WebServices.Data.FolderId([Microsoft.Exchange.WebServices.Data.WellKnownFolderName]::Tasks,$MailboxToImpersonate)
                     itemSearchOptions "IPM.Task"
-                    Write-LogEntry -LogName $logpath -LogEntryText "The Recover Folder is: $($global:recoveryFolder.FolderName)"             
+                    $destFolder = $global:recoveryFolder.FolderName
+                    Write-LogEntry -LogName $logpath -LogEntryText "The Recover Folder is: $destFolder"             
                 }
                 recoverNotes {
                     $global:recoveryFolder = New-Object Microsoft.Exchange.WebServices.Data.FolderId([Microsoft.Exchange.WebServices.Data.WellKnownFolderName]::Notes,$MailboxToImpersonate)
                     itemSearchOptions "IPM.StickyNote"
-                    Write-LogEntry -LogName $logpath -LogEntryText "The Recover Folder is: $($global:recoveryFolder.FolderName)"
+                    $destFolder = $global:recoveryFolder.FolderName
+                    Write-LogEntry -LogName $logpath -LogEntryText "The Recover Folder is: $destFolder"
                                    
                 }
                 RecoverEmail {
                     $inboxID = new-object Microsoft.Exchange.WebServices.Data.FolderId([Microsoft.Exchange.WebServices.Data.WellKnownFolderName]::Inbox,$MailboxToImpersonate) 
                     itemSearchOptions "IPM.Note"
                     if($subfolder){
-                        Write-LogEntry -LogName $logpath -LogEntryText "`tTry to create subfolder: $subfolder"
+                        Write-LogEntry -LogName $logpath -LogEntryText "`tTrying to create subfolder: $subfolder"
                         CreateFolders $inboxID $subfolder
-                        Write-LogEntry -LogName $logpath -LogEntryText "The Recover Folder is: $($global:recoveryFolder.FolderName)"                        
+                        $destFolder = $global:recoveryFolder.DisplayName
+                        Write-LogEntry -LogName $logpath -LogEntryText "The Recover Folder is: $destFolder"     
+                        $global:recoveryFolder = $global:recoveryFolder.Id                   
                     }                                     
                     else{
                         Write-LogEntry -LogName $logpath -LogEntryText "`tDefaulting to Inbox"                        
                         $global:recoveryFolder = $inboxID
-                        Write-LogEntry -LogName $logpath -LogEntryText "The Recover Folder is: $($global:recoveryFolder.FolderName)"                        
+                        $destFolder = $global:recoveryFolder.FolderName
+                        Write-LogEntry -LogName $logpath -LogEntryText "The Recover Folder is: $destFolder"                        
                     }
                 }
                 Default {
                     $inboxID = new-object Microsoft.Exchange.WebServices.Data.FolderId([Microsoft.Exchange.WebServices.Data.WellKnownFolderName]::Inbox,$MailboxToImpersonate) 
                     itemSearchOptions "IPM.Note"
                     if($subfolder){
-                        Write-LogEntry -LogName $logpath -LogEntryText "`tTry to create subfolder: $subfolder"
+                        Write-LogEntry -LogName $logpath -LogEntryText "`tTrying to create subfolder: $subfolder"
                         CreateFolders $inboxID $subfolder
-                        Write-LogEntry -LogName $logpath -LogEntryText "The Recover Folder is: $($global:recoveryFolder.FolderName)"                        
+                        $destFolder = $global:recoveryFolder.DisplayName
+                        Write-LogEntry -LogName $logpath -LogEntryText "The Recover Folder is: $destFolder"    
+                        $global:recoveryFolder = $global:recoveryFolder.Id                    
                     }                                      
                     else{
                         $global:recoveryFolder = $inboxID
-                        Write-LogEntry -LogName $logpath -LogEntryText "The Recover Folder is: $($global:recoveryFolder.FolderName)"                        
+                        $destFolder = $global:recoveryFolder.FolderName
+                        Write-LogEntry -LogName $logpath -LogEntryText "The Recover Folder is: $destFolder"                        
                     }
                 }
             }
@@ -355,7 +370,7 @@ $scriptblock = {
                         [int]$batch = 1
                         [decimal]$batches = (([int]$items.TotalCount)/($pagelimit))
                         $batches = [System.Math]::Ceiling($batches)
-                        Write-LogEntry -LogName $logpath -LogEntryText "There are $batches Batches"                
+                        Write-LogEntry -LogName $logpath -LogEntryText "`tThere are $batches Batches"                
                         $moreitems = $true
                         do{             
                             $count = @($items.count)
@@ -365,12 +380,11 @@ $scriptblock = {
                                 Default {$mailboxtomove = "`tMoving $count, Final Batch # $batch"}
                             }
 
-                            Write-LogEntry -LogName $logpath -LogEntryText "`tThe Recovery Subfolder is: $($global:recoveryFolder.DisplayName)"
                             if($whatif){
-                                Write-LogEntry -LogName $logpath -LogEntryText "Whatif: $mailboxtomove from $($folder.DisplayName) to  $($global:recoveryFolder.FolderName)" -ForegroundColor Yellow
+                                Write-LogEntry -LogName $logpath -LogEntryText "Whatif: $mailboxtomove from $($folder.DisplayName) to  $destFolder" -ForegroundColor Yellow
                             }
                             else{
-                                Write-LogEntry -LogName $logpath -LogEntryText "$mailboxtomove from  $($folder.DisplayName) to  $($global:recoveryFolder.FolderName)"
+                                Write-LogEntry -LogName $logpath -LogEntryText "$mailboxtomove from  $($folder.DisplayName) to  $destFolder"
                                 # This is our method by which we move items to the destination recovery folder"
                                 $items.Move($global:recoveryFolder) | Out-Null
                             }
@@ -486,12 +500,11 @@ While($exit -eq $false){
                 whatif = $whatif
                 pagelimit = $pagelimit
                 logpath = $rootpath
-                recoverNotes = $recoverNotes
-                recoverTasks = $recoverTasks
-                recoverCalendar = $recoverCalendar
-                recoverAll = $recoverAll
             }
-            
+            if($recoverTasks){$paramblock.recoverTasks = "Yes"}
+            if($recoverNotes){$paramblock.recoverNotes = "Yes"}
+            if($recoverCalendar){$paramblock.recoverCalendar = "Yes"}
+            if($recoverAll){$paramblock.recoverAll = "Yes"}
             Write-LogEntry -LogName $logpath -LogEntryText "Provisioning Job  $MailboxToImpersonate; LastRun: $lastrun" -ForegroundColor White
             Start-RSJob -Name $MailboxToImpersonate -ScriptBlock $scriptblock
             $provisioned++
@@ -502,17 +515,12 @@ While($exit -eq $false){
     Start-Sleep -Seconds 3
     }
     if(($lastrun -ge $Mailboxes.Count)){
-        if((Get-RSJob -State Running).Count -gt 0){
-            Write-Progress -Activity "Waiting for jobs to finish" -PercentComplete 100 -Id 0            
-            Write-LogEntry -LogName $logpath -LogEntryText "`nPausing Execution for 1 minute, to let jobs finish" -ForegroundColor Yellow
-            Start-Sleep -Seconds 60
+        while(Get-RSJob -State Running){
+            Write-Progress -Activity "Waiting for $((Get-RSJob -State Running).Count) jobs to finish" -PercentComplete 100 -Id 0            
+            Write-LogEntry -LogName $logpath -LogEntryText "`nPausing for 30 seconds, and will check again" -ForegroundColor Yellow
+            Start-Sleep -Seconds 30
         }
-        if((Get-RSJob -State Running).Count -gt 0){
-            Write-LogEntry -LogName $logpath -LogEntryText "`nSome jobs still not finished, will exit script, check running jobs with Get-RSJob -State Running" -ForegroundColor Yellow
-        }
-        else{
-            Write-LogEntry -LogName $logpath -LogEntryText "All Jobs Finished" -ForegroundColor Yellow
-        }
+        Write-LogEntry -LogName $logpath -LogEntryText "All Jobs Finished" -ForegroundColor Yellow
         Get-RSJob | Export-Csv $rootpath\RSJob-State.csv -NoTypeInformation
         $exit = $True
     }
@@ -522,5 +530,5 @@ While($exit -eq $false){
 
 }
 
-Write-LogEntry -LogName $logpath -LogEntryText "Jobs Finished: Cleaning up Jobs" -ForegroundColor Yellow
+Write-LogEntry -LogName $logpath -LogEntryText "Cleaning up Jobs" -ForegroundColor Yellow
 Get-RSJob -State Completed | Remove-RSJob
