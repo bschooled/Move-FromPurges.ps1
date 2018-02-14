@@ -1,9 +1,11 @@
-## Move-FromPurges.ps1
-The purpose of this script is to be able to recover items from the hidden Purges subfolder in situations where a Retention policy or other process has moved large amounts of emails to it. At the moment it can only recover email messages from the purges folder, but is intended to have more capabilities in the future.
-  
+  ## Move-FromPurges.ps1
+The purpose of this script is to be able to recover items from the hidden Purges subfolder in situations where a Retention policy or other process has moved large amounts of emails to it. The script can recover Emails, Notes, Tasks, and Calendar items.
+
+## Updates  
+* Notes, Tasks, and Calendar items can now be recovered, and will go to their respective folders: Check the parameters below    
+
 ## Future Plans
 * Create a working GUI via the Launch GUI shell  
-* Add Notes,Tasks, and Calendar Recovery  
 * Allow user to determine recovery paths  
 * Simplify Dependencies  
   
@@ -35,7 +37,12 @@ f.	Optional: -whatif <-Runs the code but does not actually move any items, it wi
 g.	Optional: -PageLimit 500 <- EWS can only return up to 1000 items at a time, the default in the script is 100. Specifying a higher value than 1000 will have no effect.  
 h.	Optional: -logpath “FolderPath” <- Specify a log path to store logs in, default is to store in the directory running script from. Just specify the folder.  
 i.	Optional: -threadlimit 5 <- The maximum number of purge recover jobs to run at once. Specifying too high a number may cause throttling or even crash the script, 5 jobs at once is the default, don’t suggest going higher than 10  
-   
-4.	If you want to do a “Dry Run” you can run with the -WhatIf switch, an example is below:
-.\Move-FromPurges.ps1 -Mailboxes $mbs -subfolder "Recovery" -AccountWithImpersonationRights "ews.impersonator@contoso.com" -startdate 01-01-2017 -enddate 09-14-2017 -whatif    
+j.  Optional: -recoverTasks <- Switch Parameter. Will recover tasks to the tasks folder *note: date filtering does not work*  
+k.  Optional: -recoverNotes <- Switch Parameter. Will recover notes to the notes folder *note: date filtering does not work*  
+l.  Optional: -recoverCalendar <- Switch Parameter. Will recover Calendar items to the Calendar folder  
+m.  Optional: -recoverAll <- Switch Parameter. Will recover all items, email items go recovery or inbox, all other items go to their respective   
+  
+4.	Examples  
+a.  .\Move-FromPurges.ps1 -Mailboxes $mbs -subfolder "Recovery" -AccountWithImpersonationRights "ews.impersonator@contoso.com" -startdate 01-01-2017 -enddate 09-14-2017 -whatif <-- Does a dry run, view log to see what it would  
+b   .\Move-FromPurges.ps1 -Mailboxes $mbs -subfolder Recovery -AccountWithImpersonationRights "ews.impersonator@contoso.com" -startdate 11-6-2016 -enddate 11-7-2017 -recoverTasks -recoverNotes -recoverCalendar <--Recovers tasks, notes, and calendar items  
 
