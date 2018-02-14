@@ -49,7 +49,6 @@ $dllexists = Get-ChildItem "C:\Program Files\Microsoft\Exchange\Web Services\2.2
 if(!$dllexists){Write-Host "No Microsoft.Exchange.WebServices.dll found in C:\Program Files\Microsoft\Exchange\Web Services\2.2\ ; Cannot Continue, Please Install the EWS Manage API 2.2"; exit;}
 $poshcmdexist = Get-Command -Module PoshRSJob -ErrorAction SilentlyContinue
 if(!$poshcmdexist){Write-Host "Missing PoshRsJob Module, this module is necessary for multithreading; You can install with Install-Module PoshRSJob from an Administrative Powershell window (PowershellGet required for Powervshell v3 and lower)"; exit;}
-if($startdate -gt $enddate){Write-Host "You cannot specify a Start Date that is after your End Date: Please Run Again" -ForegroundColor Yellow; Exit;}
 Import-Module PoshRsJob
 #Credential Management
 Get-RSJob -State Completed | Remove-RSJob
@@ -368,6 +367,7 @@ $scriptblock = {
 try{
     [datetime]$startdate = Get-Date $startdate
     [datetime]$enddate = Get-Date $enddate
+    if($startdate -gt $enddate){Write-Host "You cannot specify a Start Date that is after your End Date: Please Run Again" -ForegroundColor Yellow; Exit;}    
 }
 catch{
     Write-LogEntry -LogName $logpath -LogEntryText "Cannot parse date times you specified, try again with formats similar to MM/DD/YYYY, YYYY-MM-DD, etc" -ForegroundColor Yellow
